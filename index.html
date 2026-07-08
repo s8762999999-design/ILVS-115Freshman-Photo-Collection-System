@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>115年度宜蘭高商新生大頭照蒐集系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 sm:p-6">
+
+    <div class="bg-white rounded-xl shadow-lg max-w-md w-full p-6 sm:p-8">
+        <div class="text-center mb-8">
+            <h1 class="text-2xl font-bold text-gray-800">115年度新生大頭照蒐集</h1>
+            <p class="text-sm text-gray-500 mt-2">支援手機直接拍照！請確實填寫班級座號並上傳清晰脫帽五官照</p>
+        </div>
+
+        <form id="uploadForm" class="space-y-5">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">科系班級</label>
+                <select id="className" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-3 focus:border-blue-500 focus:ring-blue-500 text-base">
+                    <option value="" disabled selected>請選擇班級</option>
+                    <option value="商資ㄧ">商資ㄧ</option>
+                    <option value="應日一">應日一</option>
+                    <option value="應英一">應英一</option>
+                    <option value="設計一">設計一</option>
+                    <option value="資訊一">資訊一</option>
+                    <option value="國一忠">國一忠</option>
+                    <option value="國一孝">國一孝</option>
+                    <option value="綜一忠">綜一忠</option>
+                    <option value="綜一孝">綜一孝</option>
+                    <option value="綜一仁">綜一仁</option>
+                    <option value="綜一愛">綜一愛</option>
+                    <option value="資一忠">資一忠</option>
+                    <option value="資一孝">資一孝</option>
+                    <option value="資一仁">資一仁</option>
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">座號</label>
+                    <input type="number" id="studentId" required min="1" max="99" placeholder="例如: 01" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-3 focus:border-blue-500 focus:ring-blue-500 text-base">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">姓名</label>
+                    <input type="text" id="studentName" required placeholder="請填寫本名" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border p-3 focus:border-blue-500 focus:ring-blue-500 text-base">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">相片檔案 (支援直接拍照)</label>
+                <input type="file" id="photoFile" accept="image/*" required class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border rounded-md p-2">
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                開始上傳
+            </button>
+        </form>
+
+        <div id="statusMessage" class="mt-4 text-center text-sm hidden font-medium"></div>
+    </div>
+
+    <script>
+        const GAS_URL = "https://script.google.com/a/macros/mx.ilvs.ilc.edu.tw/s/AKfycbxCx0yhg-94R4NZRsUzd0FqDnkvyeFKvI5yp8uuxXaeVzSR3JLIrO4vHRUmR17H2WbR/exec";
+
+        // 圖片壓縮函數 (降低手機拍照的高解析度負擔)
+        function compressImage(file, maxWidth, maxHeight, quality) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = event => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        let width = img.width;
+                        let height = img.height;
+
+                        // 計算等比例縮放
+                        if (width > height) {
+                            if (width > maxWidth) {
+                                height = Math.round((height *= maxWidth / width));
+                                width = maxWidth;
+                            }
+                        } else {
+                            if (height > maxHeight) {
+                                width = Math.round((width *= maxHeight / height));
+                                height = maxHeight;
+                            }
+                        }
+
+                        // 將圖片畫入 Canvas
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // 輸出壓縮後的 Base64 (強制轉為 JPEG 格式)
+                        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+                        resolve(compressedBase64);
+                    };
+                    img.onerror = error => reject(error);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const statusMessage = document.getElementById('statusMessage');
+            const fileInput = document.getElementById('photoFile');
+            const file = fileInput.files[0];
+
+            if (!file) return;
+
+            // 鎖定按鈕防止重複提交
+            submitBtn.disabled = true;
+            submitBtn.innerText = "照片壓縮與上傳中，請稍候...";
+            statusMessage.classList.add('hidden');
+
+            try {
+                // 執行壓縮：最大寬高 1200px，畫質設定為 0.8
+                const compressedBase64 = await compressImage(file, 1200, 1200, 0.8);
+
+                // 準備傳送的資料負載 (Payload)
+                const payload = {
+                    className: document.getElementById('className').value,
+                    studentId: document.getElementById('studentId').value.padStart(2, '0'),
+                    studentName: document.getElementById('studentName').value,
+                    // 副檔名強制改為 .jpg，因為壓縮後輸出為 JPEG
+                    fileName: file.name.replace(/\.[^/.]+$/, "") + ".jpg",
+                    mimeType: "image/jpeg",
+                    fileData: compressedBase64
+                };
+
+                // 發送 POST 請求至 GAS
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                statusMessage.classList.remove('hidden');
+                if (result.status === 'success') {
+                    statusMessage.className = "mt-4 text-center text-sm text-green-600 font-medium";
+                    statusMessage.innerText = "✅ " + result.message;
+                    document.getElementById('uploadForm').reset();
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                statusMessage.classList.remove('hidden');
+                statusMessage.className = "mt-4 text-center text-sm text-red-600 font-medium";
+                statusMessage.innerText = "❌ 發生錯誤：" + error.message;
+            } finally {
+                // 解除按鈕鎖定
+                submitBtn.disabled = false;
+                submitBtn.innerText = "開始上傳";
+            }
+        });
+    </script>
+</body>
+</html>
